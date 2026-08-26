@@ -8,10 +8,10 @@
 [![Vercel](https://img.shields.io/badge/Vercel-deployed-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://vercel.com)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
-[Live Demo](#) · [How it works](#how-it-works) · [Tech Stack](#tech-stack) · [Setup](#setup) · [Roadmap](#roadmap)
+[Live Demo](https://global-lead-finder-app.vercel.app) · [How it works](#how-it-works) · [Tech Stack](#tech-stack) · [Setup](#setup) · [Roadmap](#roadmap)
 
 ---
-    ![Screenshot](assets/screenshot.png)
+![Screenshot](assets/screenshot.png)
 ## Overview
 
 Finding and qualifying B2B leads is usually a manual grind: search Google Maps, open each listing, guess which ones are worth contacting, then hunt for an email or a decision-maker's name one tab at a time.
@@ -71,8 +71,8 @@ Business type + Country (React UI)
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/Zohaib-mzb/lead-finder-frontend.git
-cd lead-finder-frontend
+git clone https://github.com/Zohaib-mzb/global-lead-finder.git
+cd global-lead-finder
 
 # 2. Install frontend dependencies
 npm install
@@ -127,4 +127,4 @@ lead-finder-frontend/
 Distributed under the MIT License. See `LICENSE` for details.
 =======
 Distributed under the MIT License. See `LICENSE` for details.
->>>>>>> c55ebdc (Prepare Vercel deployment)
+
