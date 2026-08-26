@@ -1,0 +1,472 @@
+{
+  "name": "Global Lead Finder",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-finder",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8787e837-8553-4ce4-b739-13fb7a15858c",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1392,
+        128
+      ],
+      "webhookId": "b592a920-eedc-45c1-9275-040069cee765"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    ...$json,\n    pageToken: null,\n    allPlaces: []\n  }\n}];"
+      },
+      "id": "f034a43e-50a1-478e-9d6f-b2e6c3dc1e94",
+      "name": "Init Pagination",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1008,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://places.googleapis.com/v1/places:searchText",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Goog-Api-Key",
+              "value": “APIKEY”
+            },
+            {
+              "name": "X-Goog-FieldMask",
+              "value": "places.id,places.displayName,places.formattedAddress,places.websiteUri,places.rating,places.userRatingCount,places.internationalPhoneNumber,places.googleMapsUri,places.businessStatus,places.types,places.location"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"textQuery\": \"{{ $json.searchText }}\",\n  \"maxResultCount\": 20,\n  \"pageToken\": \"{{ $json.pageToken || undefined }}\"\n}",
+        "options": {}
+      },
+      "id": "7ea768d2-5ac5-4771-967a-e1c987743683",
+      "name": "Places Text Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -800,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const currentPlaces = $json.places || [];\nconst nextPageToken = $json.nextPageToken || null;\nconst previous = $('Init Pagination').item.json.allPlaces || [];\n\nconst merged = [...previous, ...currentPlaces];\n\n// Deduplicate by place_id\nconst seen = new Set();\nconst deduped = merged.filter(p => {\n  if (seen.has(p.id)) return false;\n  seen.add(p.id);\n  return true;\n});\n\nreturn [{\n  json: {\n    ...$('Build Search Query').item.json,\n    allPlaces: deduped,\n    pageToken: nextPageToken,\n    hasMore: !!nextPageToken && deduped.length < 60\n  }\n}];"
+      },
+      "id": "e9b8e6b3-6235-4459-ac1e-b719e4dc4110",
+      "name": "Collect Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2bfa50c4-964b-4cfc-ab44-5a6e3a23e84a",
+              "leftValue": "={{ $json.hasMore }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "24fcb1ec-b58c-493c-9469-52ee717a6c02",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -432,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "id": "8a41d87b-573d-47fc-bf3e-5cefd4e4970c",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -304,
+        -80
+      ],
+      "webhookId": "cf786508-e850-42fa-8645-31940bb888ea"
+    },
+    {
+      "parameters": {
+        "jsCode": "const places = $json.allPlaces || [];\nconst filters = $('Build Search Query').item.json;\nconst websiteFilter = filters.websiteFilter || 'both';\n\n// Start with user-requested filters\nlet minRating = parseFloat(filters.minRating) || 0;\nlet maxReviews = parseInt(filters.maxReviews) || 9999;\nlet minReviews = parseInt(filters.minReviews) || 0;\n\nfunction passesWebsiteFilter(place, filterType) {\n  const hasWebsite = !!(place.websiteUri && place.websiteUri.trim() !== '');\n  if (filterType === 'no_website') return !hasWebsite;\n  if (filterType === 'has_website') return hasWebsite;\n  return true;\n}\n\nfunction scoreAndFilter(placeList, minR, maxRev, minRev, webFilter) {\n  const results = [];\n\n  for (const place of placeList) {\n    const reviewCount = place.userRatingCount || 0;\n    const rating = place.rating || 0;\n\n    // Apply rating filter\n    if (minR > 0 && rating < minR) continue;\n\n    // Apply review count filters\n    if (reviewCount > maxRev) continue;\n    if (reviewCount < minRev) continue;\n\n    // Apply website filter\n    if (!passesWebsiteFilter(place, webFilter)) continue;\n\n    // Score it\n    let tier = 4;\n    if (reviewCount <= 20) tier = 1;\n    else if (reviewCount <= 200) tier = 2;\n    else if (reviewCount >= 1000 && rating < 4.5) tier = 3;\n\n    results.push({\n      place_id: place.id || '',\n      name: place.displayName?.text || 'Unknown',\n      address: place.formattedAddress || 'Unknown',\n      phone: place.internationalPhoneNumber || 'Not listed',\n      website: place.websiteUri || null,\n      has_website: !!(place.websiteUri && place.websiteUri.trim() !== ''),\n      rating: rating,\n      review_count: reviewCount,\n      google_maps_url: place.googleMapsUri || '',\n      business_status: place.businessStatus || 'Unknown',\n      category: place.types ? place.types[0] : 'Unknown',\n      priority_tier: tier\n    });\n  }\n\n  return results;\n}\n\n// Try with user filters first\nlet scored = scoreAndFilter(places, minRating, maxReviews, minReviews, websiteFilter);\n\n// If zero results — progressively relax filters\n// Step 1: relax review count limits\nif (scored.length === 0 && (maxReviews < 9999 || minReviews > 0)) {\n  scored = scoreAndFilter(places, minRating, 9999, 0, websiteFilter);\n}\n\n// Step 2: relax rating filter\nif (scored.length === 0 && minRating > 0) {\n  scored = scoreAndFilter(places, 0, 9999, 0, websiteFilter);\n}\n\n// Step 3: relax website filter too\nif (scored.length === 0 && websiteFilter !== 'both') {\n  scored = scoreAndFilter(places, 0, 9999, 0, 'both');\n}\n\n// Step 4: return everything with no filters at all\nif (scored.length === 0) {\n  for (const place of places) {\n    const reviewCount = place.userRatingCount || 0;\n    const rating = place.rating || 0;\n    let tier = 4;\n    if (reviewCount <= 20) tier = 1;\n    else if (reviewCount <= 200) tier = 2;\n    else if (reviewCount >= 1000 && rating < 4.5) tier = 3;\n\n    scored.push({\n      place_id: place.id || '',\n      name: place.displayName?.text || 'Unknown',\n      address: place.formattedAddress || 'Unknown',\n      phone: place.internationalPhoneNumber || 'Not listed',\n      website: place.websiteUri || null,\n      has_website: !!(place.websiteUri && place.websiteUri.trim() !== ''),\n      rating: rating,\n      review_count: reviewCount,\n      google_maps_url: place.googleMapsUri || '',\n      business_status: place.businessStatus || 'Unknown',\n      category: place.types ? place.types[0] : 'Unknown',\n      priority_tier: tier\n    });\n  }\n}\n\n// Sort by tier then review count ascending\nscored.sort((a, b) => {\n  if (a.priority_tier !== b.priority_tier) return a.priority_tier - b.priority_tier;\n  return a.review_count - b.review_count;\n});\n\n// Cap at 20\nscored = scored.slice(0, 20);\n\nconst summary = {\n  keyword: filters.keyword,\n  location: `${filters.city ? filters.city + ', ' : ''}${filters.country}`,\n  total_found: places.length,\n  total_after_filtering: scored.length,\n  website_filter_applied: websiteFilter,\n  min_rating_applied: minRating,\n  max_review_count_applied: maxReviews\n};\n\nreturn [{\n  json: {\n    search_summary: summary,\n    businesses: scored\n  }\n}];"
+      },
+      "id": "2994c173-d306-4e07-8eff-5b465507d389",
+      "name": "Filter and Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "businesses",
+        "options": {}
+      },
+      "id": "2403b9e9-fe16-4d92-95ce-b4eba2d4e243",
+      "name": "Split Out",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"q\": \"{{ $json.name }} {{ $json.website ? $json.website : '' }} owner email contact social media\",\n  \"num\": 5\n}",
+        "options": {}
+      },
+      "id": "4b3b9d4b-8994-4cad-974c-9efac22a31e0",
+      "name": "Serper Business Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        128,
+        128
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "tRIAdJf7I9zuJ2RC",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 0.5
+      },
+      "id": "a9d08e3f-38e8-4ec5-89bb-b35b0653c110",
+      "name": "Wait1",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        368,
+        160
+      ],
+      "webhookId": "60164c93-6dee-4329-9802-94d740b2aba4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Runs ONCE - pulls all 20 businesses and their paired Serper results by index\nconst businesses = $('Split Out').all();\nconst searchItems = $input.all(); // output of Wait node, 1:1 paired with businesses by order\n\nconst batch = businesses.map((b, i) => {\n  const business = b.json;\n  const searchResults = (searchItems[i]?.json?.organic || []).slice(0, 5).map(r => ({\n    title: (r.title || '').replace(/\"/g, \"'\"),\n    snippet: (r.snippet || '').replace(/\"/g, \"'\"),\n    link: r.link || ''\n  }));\n  return {\n    id: business.place_id || String(i), // stable id for re-matching later\n    name: business.name,\n    address: business.address,\n    website: business.website || 'Not listed',\n    search_results: searchResults\n  };\n});\n\nconst prompt = `You are a data extraction specialist. For EACH business in the list below, find real, verifiable contact information using ONLY the search results provided for that business. Never invent or guess.\n\nBusinesses:\n${JSON.stringify(batch, null, 2)}\n\nReturn ONLY a valid JSON array (no markdown, no backticks), with exactly one object per business, in this exact shape, using the same \"id\" you were given:\n[\n  {\n    \"id\": \"same id as input\",\n    \"owner_name\": \"owner or founder name if explicitly mentioned, or Not found\",\n    \"email\": \"a real email address if explicitly shown, or Not found\",\n    \"instagram\": \"Instagram handle or URL if found, or Not found\",\n    \"facebook\": \"Facebook page URL if found, or Not found\",\n    \"linkedin\": \"LinkedIn company or owner page if found, or Not found\",\n    \"additional_notes\": \"any other relevant contact detail or business info found, or empty string\"\n  }\n]`;\n\nreturn {\n  json: {\n    prompt: prompt,\n    businesses: businesses.map(b => b.json) // carried forward for the merge step\n  }\n};"
+      },
+      "id": "766f7ebc-5f78-4c81-9b7b-2fea4b1d1dd1",
+      "name": "Build Enrichment Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=APIKEY,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": {{ JSON.stringify($json.prompt) }}\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "4023cc46-3db4-4c6d-aa17-4df205999f0a",
+      "name": "Gemini Enrichment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        736,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "enriched_businesses",
+        "options": {}
+      },
+      "id": "fd0b324a-7cc5-4c0b-8c9d-b2093cd7d85f",
+      "name": "Aggregate",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "eef3ad0e-e4b4-471f-9f96-2e78d4abbc7b",
+      "name": "Respond to Webhook1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1440,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json.candidates[0].content.parts[0].text;\n\nlet enriched;\ntry {\n  const cleaned = raw.replace(/```json|```/g, '').trim();\n  enriched = JSON.parse(cleaned);\n} catch (e) {\n  throw new Error('Gemini batch response was not valid JSON: ' + e.message);\n}\nconst businesses = $('Build Enrichment Prompt').item.json.businesses;\n\nconst enrichedById = new Map(enriched.map(e => [String(e.id), e]));\n\nreturn businesses.map((business, i) => {\n  const id = business.place_id || String(i);\n  const match = enrichedById.get(String(id)) || {};\n  return {\n    json: {\n      ...business,\n      owner_name: match.owner_name || 'Not found',\n      email: match.email || 'Not found',\n      instagram: match.instagram || 'Not found',\n      facebook: match.facebook || 'Not found',\n      linkedin: match.linkedin || 'Not found',\n      additional_notes: match.additional_notes || ''\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        144
+      ],
+      "id": "650ef722-012d-4933-a9ad-2567197905df",
+      "name": "Parse Batch & Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.item.json.body;\n\nconst country = body.country || '';\nconst city = body.city || '';\nconst keyword = body.keyword || '';\nconst newOrOld = body.newOrOld || 'any';\nconst websiteFilter = body.websiteFilter || 'both';\nconst minRating = parseFloat(body.minRating) || 0;\nconst maxReviews = parseInt(body.maxReviews) || 9999;\nconst minReviews = parseInt(body.minReviews) || 0;\n\n// Build multiple search queries to maximise result pool\n// When no city provided, we search country-level which Google\n// handles via textQuery — it will find best matches nationally\nconst searches = [];\n\nif (city && city.trim() !== '') {\n  // City provided — search that city specifically\n  searches.push(`${keyword} in ${city}, ${country}`);\n  // Also search surrounding area for more results\n  searches.push(`${keyword} near ${city}, ${country}`);\n} else {\n  // No city — search country level\n  // Google Places handles this and returns results from\n  // major populated areas automatically\n  searches.push(`${keyword} in ${country}`);\n  searches.push(`best ${keyword} ${country}`);\n  searches.push(`local ${keyword} ${country}`);\n}\n\nreturn [{\n  json: {\n    // Primary search text (used by Places API)\n    searchText: searches[0],\n    // All search variants (for retry logic)\n    searchVariants: searches,\n    currentVariantIndex: 0,\n    country: country,\n    city: city,\n    keyword: keyword,\n    newOrOld: newOrOld,\n    websiteFilter: websiteFilter,\n    minRating: minRating,\n    maxReviews: maxReviews,\n    minReviews: minReviews,\n    allPlaces: []\n  }\n}];"
+      },
+      "id": "04685a61-e703-4139-a97e-6f3dab3bc049",
+      "name": "Build Search Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        272
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build Search Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Pagination": {
+      "main": [
+        [
+          {
+            "node": "Places Text Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Places Text Search": {
+      "main": [
+        [
+          {
+            "node": "Collect Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Page": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Filter and Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Places Text Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter and Score": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Serper Business Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper Business Search": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Build Enrichment Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Enrichment Prompt": {
+      "main": [
+        [
+          {
+            "node": "Gemini Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Parse Batch & Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Batch & Merge": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Search Query": {
+      "main": [
+        [
+          {
+            "node": "Init Pagination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "bb06a84e-c471-4d65-9215-3698a48e55ac",
+  "meta": {
+    "instanceId": "bb01218d13a6f8d8b5e16e9e0512d37fd5d07cb2f02c46149882646496648090"
+  },
+  "nodeGroups": [],
+  "id": "ihYQcnnyU62NijtS",
+  "tags": []
+}
