@@ -123,4 +123,8 @@ lead-finder-frontend/
 
 ## License
 
+<<<<<<< HEAD
 Distributed under the MIT License. See `LICENSE` for details.
+=======
+Distributed under the MIT License. See `LICENSE` for details.
+>>>>>>> c55ebdc (Prepare Vercel deployment)
