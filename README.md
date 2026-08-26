@@ -11,7 +11,7 @@
 [Live Demo](#) · [How it works](#how-it-works) · [Tech Stack](#tech-stack) · [Setup](#setup) · [Roadmap](#roadmap)
 
 ---
-
+    ![Screenshot](assets/screenshot.png)
 ## Overview
 
 Finding and qualifying B2B leads is usually a manual grind: search Google Maps, open each listing, guess which ones are worth contacting, then hunt for an email or a decision-maker's name one tab at a time.
