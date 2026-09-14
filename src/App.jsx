@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Radar } from "lucide-react";
+import { Analytics } from "@vercel/analytics/react";
 import Hero from "./components/Hero.jsx";
 import SearchForm from "./components/SearchForm.jsx";
 import FeatureBadges from "./components/FeatureBadges.jsx";
@@ -75,50 +76,59 @@ export default function App() {
 
   if (view === "pipeline") {
     return (
-      <PipelineLoader
-        status={pipelineStatus}
-        errorMessage={errorMessage}
-        onRetry={handleRetry}
-      />
+      <>
+        <PipelineLoader
+          status={pipelineStatus}
+          errorMessage={errorMessage}
+          onRetry={handleRetry}
+        />
+        <Analytics />
+      </>
     );
   }
 
   if (view === "results") {
     return (
-           <div className="min-h-[100dvh]">
-        <TopBar />
-        <main className="mx-auto max-w-6xl px-4 py-10 md:px-6">
-          <ResultsHeader
-            count={sortedBusinesses.length}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            onDownloadPdf={handleDownloadPdf}
-            onNewSearch={handleNewSearch}
-          />
-          <SummaryCards businesses={sortedBusinesses} />
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {sortedBusinesses.map((business, i) => (
-              <LeadCard key={business.id} business={business} index={i} />
-            ))}
-          </div>
-        </main>
-      </div>
+      <>
+        <div className="min-h-[100dvh]">
+          <TopBar />
+          <main className="mx-auto max-w-6xl px-4 py-10 md:px-6">
+            <ResultsHeader
+              count={sortedBusinesses.length}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              onDownloadPdf={handleDownloadPdf}
+              onNewSearch={handleNewSearch}
+            />
+            <SummaryCards businesses={sortedBusinesses} />
+            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {sortedBusinesses.map((business, i) => (
+                <LeadCard key={business.id} business={business} index={i} />
+              ))}
+            </div>
+          </main>
+        </div>
+        <Analytics />
+      </>
     );
   }
 
   return (
-        <div className="min-h-[100dvh]">
-      <TopBar />
-      <main className="px-4 pb-24 pt-16 md:pt-24">
-        <Hero />
-        <SearchForm
-          onSubmit={runSearch}
-          isSubmitting={view === "pipeline"}
-        />
-        <FeatureBadges />
-        <HowItWorks />
-      </main>
-    </div>
+    <>
+      <div className="min-h-[100dvh]">
+        <TopBar />
+        <main className="px-4 pb-24 pt-16 md:pt-24">
+          <Hero />
+          <SearchForm
+            onSubmit={runSearch}
+            isSubmitting={view === "pipeline"}
+          />
+          <FeatureBadges />
+          <HowItWorks />
+        </main>
+      </div>
+      <Analytics />
+    </>
   );
 }
 
